@@ -1,2 +1,3 @@
 p5
 pandas
+scipy

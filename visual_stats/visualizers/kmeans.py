@@ -7,6 +7,7 @@ from typing import Tuple
 
 from .visualizer import Visualizer, VisualizerState
 from ..models import KMeans
+from ..utils.linalg import circumcenter, intersect
 
 
 class KMeansVisualizer(Visualizer):
@@ -88,27 +89,12 @@ class KMeansVisualizer(Visualizer):
 
         midpoint = lambda *args: np.mean(np.stack([*args]), axis=0)
 
-        midpoints = [[midpoint(centroids[i], centroids[j]) \
-                      for j in range(i, len(centroids)) if i != j] \
-                     for i in range(len(centroids))]
-        midpoints = reduce(lambda x, y: x + y, midpoints)
+        midpoints = [midpoint(centroids[i], centroids[j]) \
+                     for i, j in [(0, 1), (0, 2), (1, 2)]]
+        distances = [euclidean(centroids[i], centroids[j]) \
+                     for i, j in [(0, 1), (0, 2), (1, 2)]]
 
-        def circumcenter(a: np.ndarray, b: np.ndarray, c: np.ndarray):
-            d = 2 * (a[0] * (b[1] - c[1]) + \
-                     b[0] * (c[1] - a[1]) + \
-                     c[0] * (a[1] - b[1]))
-
-            x = ((a[0] ** 2 + a[1] ** 2) * (b[1] - c[1]) + \
-                 (b[0] ** 2 + b[1] ** 2) * (c[1] - a[1]) + \
-                 (c[0] ** 2 + c[1] ** 2) * (a[1] - b[1])) / d
-            y = ((a[0] ** 2 + a[1] ** 2) * (c[0] - b[0]) + \
-                 (b[0] ** 2 + b[1] ** 2) * (a[0] - c[0]) + \
-                 (c[0] ** 2 + c[1] ** 2) * (b[0] - a[0])) / d
-            return (x, y)
-
-        print(centroids)
         center = circumcenter(*centroids)
-        print(center)
 
         corners = {
             'leftbot': (np.amin(self.points[:,0]), np.amin(self.points[:,1])),
@@ -126,25 +112,37 @@ class KMeansVisualizer(Visualizer):
             {-1: 'left', 1: 'right'},
             {-1: 'bot', 1: 'top'}
         ]
+        opposite = {
+            'top': 'bot',
+            'bot': 'top',
+            'right': 'left',
+            'left': 'right'
+        }
 
-        def intersect(v1: Tuple[np.ndarray], v2: Tuple[np.ndarray]):
-            da = v1[1] - v1[0]
-            db = v2[1] - v2[0]
-            dp = v1[0] - v2[0]
-            dap = np.asarray([-da[1], da[0]])
-            denom = np.dot( dap, db)
-            num = np.dot( dap, dp )
-            return (num / denom.astype(float))*db + v2[0]
+        def inside(triangle: np.ndarray, point: np.ndarray) -> bool:
+            (x1, y1), (x2, y2), (x3, y3) = triangle
+
+            c1 = (x2 - x1) * (point[1] - y1) - (y2 - y1) * (point[0] - x1)
+            c2 = (x3 - x2) * (point[1] - y2) - (y3 - y2) * (point[0] - x2)
+            c3 = (x1 - x3) * (point[1] - y3) - (y1 - y3) * (point[0] - x3)
+
+            return (c1<0 and c2<0 and c3<0) or (c1>0 and c2>0 and c3>0)
+
 
         p5.stroke(r=128, g=128, b=255)
         p5.stroke_weight(3)
 
         for midpoint in midpoints:
-            p5.circle(self._to_screen_coordinate(midpoint), self.RADIUS)
             vector = midpoint - center
             direction = np.sign(vector).astype(int)
             direction = [directions[dim][direction[dim]] \
                          for dim in range(len(direction))]
+
+            others = [m for m in midpoints if not np.array_equal(m, midpoint)]
+
+            if inside(others + [center], midpoint):
+                direction = [opposite[dim] for dim in direction]
+
             intersections = [intersect(edges[direction[i]],
                                        (midpoint, center)) \
                              for i in range(len(directions))]
